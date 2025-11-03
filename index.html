@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Entraîneur de Poker - Cartes Foncées</title>
+    <!-- Chosen Palette: Neutral Warm (Slate/Gray/Indigo) -->
+    <!-- Application Structure Plan: Logique mixte (Probas Flop pour Pré-Flop, Probas Générales pour Post-Flop). Cartes redessinées (placeholders foncés). -->
+    <!-- Visualization & Content Choices: Cartes : Divs HTML (design foncé). Analyse : Tableau HTML. Rangs en "10". -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .card {
+            width: 7rem;
+            height: 10rem;
+        }
+        .card-sm {
+            width: 5rem;
+            height: 7rem;
+        }
+        /* Couleurs de figures plus riches */
+        .suit-red {
+            color: #DC2626; /* red-600 */
+        }
+        .suit-black {
+            color: #1F2937; /* gray-800 */
+        }
+        
+        .prob-table-cell {
+            padding: 0.5rem;
+            border-bottom: 1px solid #e2e8f0; 
+        }
+
+        
+        @media (max-width: 640px) {
+            .card {
+                width: 5rem;
+                height: 7rem;
+            }
+            .card-sm {
+                width: 3.5rem;
+                height: 5rem;
+            }
+            .prob-table-cell {
+                padding: 0.25rem;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-900 min-h-screen flex flex-col items-center p-4">
+
+    <header class="w-full max-w-6xl text-center mb-6">
+        <h1 class="text-3xl sm:text-4xl font-bold text-slate-800">Entraîneur de Poker</h1>
+        <p class="text-lg text-slate-600">Probabilités de combinaison en temps réel.</p>
+    </header>
+
+    <main class="w-full max-w-6xl flex-grow">
+        <!-- Cartes Communes (Board) -->
+        <section class="mb-8 p-4 bg-slate-200 rounded-lg shadow-inner min-h-[10rem] flex items-center justify-center">
+            <h2 class="text-xl font-semibold text-slate-700 mr-4 hidden sm:block">Board</h2>
+            <div id="board-cards-container" class="flex flex-wrap justify-center gap-2 sm:gap-4">
+                <!-- Placeholders (Style Foncé) -->
+                <div class="card-sm bg-slate-400 border-2 border-slate-500 border-dashed rounded-xl shadow-lg"></div>
+                <div class="card-sm bg-slate-400 border-2 border-slate-500 border-dashed rounded-xl shadow-lg"></div>
+                <div class="card-sm bg-slate-400 border-2 border-slate-500 border-dashed rounded-xl shadow-lg"></div>
+                <div class="card-sm bg-slate-400 border-2 border-slate-500 border-dashed rounded-xl shadow-lg"></div>
+                <div class="card-sm bg-slate-400 border-2 border-slate-500 border-dashed rounded-xl shadow-lg"></div>
+            </div>
+        </section>
+
+        <!-- Main du Joueur et Meilleure Main -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <!-- Section Main du Joueur -->
+            <section class="p-4 bg-white rounded-lg shadow-md flex flex-col items-center">
+                <h2 class="text-2xl font-semibold text-slate-800 mb-4">Votre Main</h2>
+                <!-- Espacement 'gap-8' -->
+                <div id="player-cards-container" class="flex justify-center gap-8">
+                    <!-- Placeholders (Style Foncé) -->
+                    <div class="card bg-slate-400 border-2 border-slate-500 border-dashed rounded-xl shadow-lg"></div>
+                    <div class="card bg-slate-400 border-2 border-slate-500 border-dashed rounded-xl shadow-lg"></div>
+                </div>
+            </section>
+            
+            <!-- Section Meilleure Main -->
+            <section class="p-4 bg-white rounded-lg shadow-md flex flex-col items-center justify-center min-h-[15rem]">
+                <h2 class="text-2xl font-semibold text-indigo-600 mb-2">Meilleure Main Actuelle</h2>
+                <div id="analysis-hand-name" class="text-3xl font-bold text-slate-800 text-center"></div>
+                <p id="initial-message" class="text-slate-500 italic mt-4">Cliquez sur "Distribuer" pour commencer.</p>
+                <div id="final-message" class="mt-4 p-3 text-center bg-green-100 text-green-700 rounded-lg hidden"></div>
+            </section>
+        </div>
+
+        <!-- Bouton de Contrôle -->
+        <div class="w-full mb-8 flex justify-center">
+            <button id="deal-button" class="w-full max-w-md bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xl py-4 px-8 rounded-lg shadow-lg transition duration-300 ease-in-out transform hover:scale-105">
+                Distribuer
+            </button>
+        </div>
+        
+        <!-- Tableau des Probabilités -->
+        <section id="prob-section" class="w-full p-6 bg-white rounded-lg shadow-md mb-8 hidden">
+            <h3 class="text-xl font-semibold text-slate-700 mb-4" id="prob-title">Probabilités de Combinaison Finale</h3>
+            
+            <div class="overflow-y-auto max-h-[400px]">
+                <table class="w-full text-left whitespace-nowrap">
+                    <tbody id="probability-table-body" class="text-slate-700 text-sm">
+                        <!-- Les probabilités seront insérées ici -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            const SUITS = ['♥', '♦', '♣', '♠'];
+            const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']; 
+            const RANKS_DISPLAY = { '10': '10' }; 
+            const RANK_VALUES = { '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14 };
+            
+            const HAND_RANK_NAMES_FR = [
+                'Carte Haute', 'Paire', 'Double Paire', 'Brelan', 'Quinte (Suite)',
+                'Couleur (Flush)', 'Full', 'Carré', 'Quinte Flush', 'Quinte Flush Royale'
+            ];
+            
+
+            let deck = [];
+            let playerHand = [];
+            let board = [];
+            let gameState = 'deal'; 
+            let fullDeckCache = []; // Cache du paquet complet
+
+            const dealButton = document.getElementById('deal-button');
+            const playerCardContainer = document.getElementById('player-cards-container');
+            const boardCardContainer = document.getElementById('board-cards-container');
+            const analysisHandName = document.getElementById('analysis-hand-name');
+            const initialMessage = document.getElementById('initial-message'); 
+            const probTableBody = document.getElementById('probability-table-body');
+            const probTitle = document.getElementById('prob-title');
+            const finalMessage = document.getElementById('final-message');
+            const probSection = document.getElementById('prob-section');
+
+            
+            function createFullDeck() {
+                fullDeckCache = [];
+                for (const suit of SUITS) {
+                    for (const rank of RANKS) {
+                        fullDeckCache.push({ rank, suit });
+                    }
+                }
+            }
+
+            
+            function createShuffledDeck() {
+                deck = [...fullDeckCache]; 
+                for (let i = deck.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [deck[i], deck[j]] = [deck[j], deck[i]];
+                }
+            }
+
+            
+            function getDisplayRank(rank) {
+                 return RANKS_DISPLAY[rank] || rank;
+            }
+
+            
+            // FONCTION renderCard (esthétique)
+            function renderCard(card, isSmall = false) {
+                const suitClass = (card.suit === '♥' || card.suit === '♦') ? 'suit-red' : 'suit-black';
+                const cardSizeClass = isSmall ? 'card-sm' : 'card';
+                const displayRank = getDisplayRank(card.rank);
+
+                // Ajuste les tailles pour les petites cartes
+                const rankSize = isSmall ? 'text-lg' : 'text-xl';
+                const suitSizeSmall = isSmall ? 'text-md' : 'text-lg';
+                const centerSuitSize = isSmall ? 'text-5xl' : 'text-7xl';
+                const padding = isSmall ? 'p-1' : 'p-2';
+                const cornerPos = isSmall ? 'top-1 left-1' : 'top-2 left-2';
+                const cornerPosBR = isSmall ? 'bottom-1 right-1' : 'bottom-2 right-2';
+
+                return `
+                    <!-- Bordure foncée: border-slate-300 -->
+                    <div class="${cardSizeClass} bg-white rounded-xl shadow-lg ${padding} ${suitClass} border border-slate-300 relative overflow-hidden">
+                        <!-- Pip Haut Gauche -->
+                        <div class="absolute ${cornerPos} flex flex-col items-center leading-none">
+                            <span class="${rankSize} font-bold">${displayRank}</span>
+                            <span class="${suitSizeSmall}">${card.suit}</span>
+                        </div>
+                        
+                        <!-- Figure Centrale -->
+                        <div class="flex items-center justify-center h-full">
+                            <span class="${centerSuitSize} opacity-70">${card.suit}</span>
+                        </div>
+
+                        <!-- Pip Bas Droit (Rotaté) -->
+                        <div class="absolute ${cornerPosBR} flex flex-col items-center leading-none rotate-180">
+                            <span class="${rankSize} font-bold">${displayRank}</span>
+                            <span class="${suitSizeSmall}">${card.suit}</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            
+            // FONCTION renderPlaceholders (esthétique foncée)
+            function renderPlaceholders(container, count, isSmall = false) {
+                container.innerHTML = '';
+                const sizeClass = isSmall ? 'card-sm' : 'card';
+                for (let i = 0; i < count; i++) {
+                    // Fond et bordure foncés: bg-slate-400, border-slate-500
+                    container.innerHTML += `<div class="${sizeClass} bg-slate-400 border-2 border-slate-500 border-dashed rounded-xl shadow-lg"></div>`;
+                }
+            }
+
+            
+            function updateUI() {
+                
+                playerCardContainer.innerHTML = playerHand.map(card => renderCard(card, false)).join('');
+
+                
+                let boardHTML = '';
+                for (let i = 0; i < 5; i++) {
+                    if (board[i]) {
+                        boardHTML += renderCard(board[i], true);
+                    } else {
+                        // Utilise le placeholder foncé
+                        boardHTML += `<div class="card-sm bg-slate-400 border-2 border-slate-500 border-dashed rounded-xl shadow-lg"></div>`;
+                    }
+                }
+                boardCardContainer.innerHTML = boardHTML;
+
+                
+                let analysis = getAnalysis();
+                analysisHandName.innerText = analysis.bestHandName;
+                
+                renderProbabilityTable(analysis.probs, analysis.currentRank);
+
+                
+                // Gère l'affichage des sections
+                if (gameState === 'deal') {
+                    initialMessage.classList.remove('hidden');
+                    analysisHandName.classList.add('hidden');
+                    probSection.classList.add('hidden'); // Cacher au tout début
+                    finalMessage.classList.add('hidden');
+                } else if (gameState === 'reset') {
+                    initialMessage.classList.add('hidden');
+                    analysisHandName.classList.remove('hidden'); 
+                    probSection.classList.add('hidden'); // Cacher à la fin
+                    finalMessage.classList.remove('hidden');
+                } else {
+                    // Cas Pre-flop, Flop, Turn
+                    initialMessage.classList.add('hidden');
+                    analysisHandName.classList.remove('hidden');
+                    finalMessage.classList.add('hidden');
+                    
+                    
+                    if (Object.keys(analysis.probs).length > 0) {
+                        probSection.classList.remove('hidden');
+                    } else {
+                        probSection.classList.add('hidden');
+                    }
+                    
+                    // Titres mis à jour pour la clarté
+                    if (board.length === 0) { // Pré-flop (state='flop')
+                        probTitle.innerText = "Probabilités (d'amélioration sur le Flop)";
+                    } else if (board.length === 3) { // Flop (state='turn')
+                         probTitle.innerText = "Probabilités de Main Finale (Général)";
+                    } else if (board.length === 4) { // Turn (state='river')
+                         probTitle.innerText = "Probabilités de Main Finale (Général)";
+                    }
+                }
+
+                
+                switch (gameState) {
+                    case 'deal':
+                        dealButton.innerText = 'Distribuer';
+                        break;
+                    case 'flop':
+                        dealButton.innerText = 'Voir le Flop';
+                        break;
+                    case 'turn':
+                        dealButton.innerText = 'Voir le Turn';
+                        break;
+                    case 'river':
+                        dealButton.innerText = 'Voir la River';
+                        break;
+                    case 'reset':
+                        dealButton.innerText = 'Nouvelle Main';
+                        break;
+                }
+            }
+            
+            
+            function handleDealClick() {
+                switch (gameState) {
+                    case 'deal':
+                        startNewHand();
+                        gameState = 'flop';
+                        break;
+                    case 'flop':
+                        board.push(deck.pop(), deck.pop(), deck.pop());
+                        gameState = 'turn';
+                        break;
+                    case 'turn':
+                        board.push(deck.pop());
+                        gameState = 'river';
+                        break;
+                    case 'river':
+                        board.push(deck.pop());
+                        gameState = 'reset'; 
+                        break;
+                    case 'reset':
+                        resetGame(); 
+                        break;
+                }
+                
+                updateUI();
+            }
+            
+            
+            function startNewHand() {
+                createShuffledDeck();
+                playerHand = [deck.pop(), deck.pop()];
+                board = [];
+            }
+
+            
+            function resetGame() {
+                playerHand = [];
+                board = [];
+                renderPlaceholders(playerCardContainer, 2, false);
+                renderPlaceholders(boardCardContainer, 5, true);
+                
+                gameState = 'deal';
+                dealButton.innerText = 'Distribuer';
+                
+                
+                startNewHand();
+                gameState = 'flop'; 
+            }
+
+            
+            function getAnalysis() {
+                if (playerHand.length < 2) { 
+                    return { bestHandName: 'N/A', probs: {}, currentRank: -1 };
+                }
+                
+                // --- PRE-FLOP (BOARD === 0) ---
+                if (board.length === 0) {
+                     const isSuited = playerHand[0].suit === playerHand[1].suit;
+                     // CORRECTION: Ajout de l'espace
+                     const bestHandName = `Main de départ ${getDisplayRank(playerHand[0].rank)} ${getDisplayRank(playerHand[1].rank)}${isSuited ? ' assorties' : ''}`;
+                     
+                     
+                     const preFlopProbs = calculateSimplifiedPreFlopProbabilities(playerHand);
+                     return { 
+                        bestHandName: bestHandName, 
+                        probs: preFlopProbs,
+                        currentRank: -1
+                     };
+                }
+
+                // --- POST-FLOP (BOARD > 0) ---
+                const allCards = [...playerHand, ...board];
+                const bestHand = evaluateHand(allCards);
+                
+                
+                const allKnownCardsSet = new Set(allCards.map(c => c.rank + c.suit));
+                const remainingDeck = fullDeckCache.filter(c => !allKnownCardsSet.has(c.rank + c.suit));
+                
+                
+                const finalProbs = calculateFinalHandProbabilities(allCards, remainingDeck);
+
+                return {
+                    bestHandName: `${HAND_RANK_NAMES_FR[bestHand.rank]} ${bestHand.name}`,
+                    probs: finalProbs,
+                    currentRank: bestHand.rank
+                };
+            }
+            
+            
+            function calculateSimplifiedPreFlopProbabilities(hand) {
+                const r1 = RANK_VALUES[hand[0].rank];
+                const r2 = RANK_VALUES[hand[1].rank];
+                const suited = hand[0].suit === hand[1].suit;
+                const paired = r1 === r2;
+                
+                let probs = {};
+                
+                if (paired) {
+                    probs['Brelan'] = 11.75; 
+                    probs['Carré'] = 0.25; 
+                    probs['Full'] = 0.73; 
+                } else {
+                    probs['Paire'] = 32.43;
+                    probs['Double Paire'] = 2.02;
+                    probs['Brelan'] = 1.35; 
+
+                    let isConnected = Math.abs(r1 - r2) <= 4 && Math.abs(r1 - r2) !== 0; 
+                    if (r1 === 14 && r2 === 5 || r2 === 14 && r1 === 5) isConnected = true; 
+                    
+                    if (isConnected) {
+                        probs['Quinte (Suite)'] = 1.31;
+                    }
+                    
+                    if (suited) {
+                        probs['Couleur (Flush)'] = 0.84; 
+                    }
+                }
+                return probs;
+            }
+
+            
+            function calculateFinalHandProbabilities(knownCards, remainingDeck) {
+                
+                const numFutureCards = 7 - knownCards.length; 
+                
+                if (numFutureCards !== 1 && numFutureCards !== 2) return {}; 
+
+                
+                const combinations = getDeckCombinations(remainingDeck, numFutureCards);
+                const totalCombos = combinations.length;
+                
+                if (totalCombos === 0) return {};
+
+                
+                
+                let handCount = {}; 
+                HAND_RANK_NAMES_FR.forEach((_, i) => handCount[i] = 0); 
+
+                
+                combinations.forEach(combo => {
+                    const finalCards = [...knownCards, ...combo];
+                    const bestFinalHand = evaluateHand(finalCards);
+                    
+                    
+                    handCount[bestFinalHand.rank]++;
+                });
+
+                
+                let results = {};
+                
+                
+                for (let i = HAND_RANK_NAMES_FR.length - 1; i >= 0; i--) {
+                     const prob = (handCount[i] / totalCombos) * 100;
+                     results[HAND_RANK_NAMES_FR[i]] = prob.toFixed(2);
+                }
+                
+                return results;
+            }
+            
+            
+            function renderProbabilityTable(probs, currentRank) {
+                let html = '';
+                
+                if (Object.keys(probs).length === 0) {
+                     probTableBody.innerHTML = '';
+                     return;
+                }
+
+                
+                let drawNames = Object.keys(probs).sort((a, b) => {
+                    
+                    const rankA = HAND_RANK_NAMES_FR.indexOf(a.split('(')[0].trim());
+                    const rankB = HAND_RANK_NAMES_FR.indexOf(b.split('(')[0].trim());
+                    
+                    if (rankA !== -1 && rankB !== -1) return rankB - rankA;
+                    
+                    return a.localeCompare(b);
+                });
+                
+                for(let drawName of drawNames) {
+                    const prob = probs[drawName] || '0.00'; 
+                    const probFloat = parseFloat(prob);
+
+                    
+                    if (probFloat < 0.01) continue; 
+
+                    
+                    let bgClass = 'hover:bg-slate-50';
+                    let textClass = 'text-slate-700';
+                    
+                    if (drawName.includes('Quinte') || drawName.includes('Couleur')) {
+                        textClass = 'text-green-700'; 
+                    } else if (drawName.includes('Paire') || drawName.includes('Brelan') || drawName.includes('Carré') || drawName.includes('Full')) {
+                        textClass = 'text-blue-700';
+                    }
+
+                    
+                    let currentHandIndicator = '';
+                    if (currentRank !== -1 && board.length > 0) { 
+                         const baseName = drawName.split('(')[0].trim();
+                         if (baseName === HAND_RANK_NAMES_FR[currentRank]) {
+                             currentHandIndicator = '<span class="text-xs text-yellow-800 ml-2">(Actuelle)</span>';
+                             bgClass = 'bg-yellow-100 font-semibold';
+                             textClass = 'text-slate-800';
+                         }
+                    }
+
+                    html += `
+                        <tr class="prob-table-row transition duration-150 ${bgClass}">
+                            <td class="py-2 px-3 prob-table-cell text-xs sm:text-sm">
+                                ${drawName} ${currentHandIndicator}
+                            </td>
+                            <td class="py-2 px-3 prob-table-cell text-right text-xs sm:text-sm font-bold ${textClass}">
+                                ${prob}%
+                            </td>
+                        </tr>
+                    `;
+                }
+
+                probTableBody.innerHTML = html;
+            }
+
+            
+            
+            function evaluateHand(sevenCards) {
+                const combinations = getHandCombinations(sevenCards, 5); 
+                let bestHand = { rank: -1, name: '', cards: [] };
+
+                for (const combo of combinations) {
+                    const handRank = rankHand(combo);
+                    if (handRank.rank > bestHand.rank) {
+                        bestHand = handRank;
+                    } else if (handRank.rank === bestHand.rank) {
+                        
+                        bestHand = breakTie(bestHand, handRank);
+                    }
+                }
+                return bestHand;
+            }
+
+            function rankHand(fiveCards) {
+                const ranks = fiveCards.map(c => RANK_VALUES[c.rank]).sort((a, b) => b - a);
+                const suits = fiveCards.map(c => c.suit);
+                const isFlush = suits.every(s => s === suits[0]);
+                
+                const uniqueRanks = [...new Set(ranks)];
+                const isStraight = uniqueRanks.length === 5 && (ranks[0] - ranks[4] === 4);
+                const isWheel = uniqueRanks.length === 5 && ranks[0] === 14 && ranks[1] === 5 && ranks[2] === 4 && ranks[3] === 3 && ranks[4] === 2;
+                
+                const rankCounts = ranks.reduce((acc, rank) => {
+                    acc[rank] = (acc[rank] || 0) + 1;
+                    return acc;
+                }, {});
+                const counts = Object.values(rankCounts).sort((a, b) => b - a);
+                const highCardName = ` (Carte Haute ${getDisplayRank(RANKS[ranks[0] - 2])})`;
+
+                if (isStraight && isFlush && ranks[0] === 14) return { rank: 9, name: 'Royale', cards: ranks };
+                if (isStraight && isFlush) return { rank: 8, name: `(Quinte High ${getDisplayRank(RANKS[ranks[0] - 2])})`, cards: ranks };
+                if (isWheel && isFlush) return { rank: 8, name: '(Quinte High 5)', cards: [5,4,3,2,1] };
+                if (counts[0] === 4) {
+                    const quadRank = getDisplayRank(RANKS[Object.keys(rankCounts).find(k => rankCounts[k] === 4) - 2]);
+                    return { rank: 7, name: `(de ${quadRank})`, cards: ranks };
+                }
+                if (counts[0] === 3 && counts[1] === 2) {
+                    const tripRank = getDisplayRank(RANKS[Object.keys(rankCounts).find(k => rankCounts[k] === 3) - 2]);
+                    const pairRank = getDisplayRank(RANKS[Object.keys(rankCounts).find(k => rankCounts[k] === 2) - 2]);
+                    return { rank: 6, name: `(aux ${tripRank} par les ${pairRank})`, cards: ranks };
+                }
+                if (isFlush) return { rank: 5, name: `(Carte Haute ${getDisplayRank(RANKS[ranks[0] - 2])})`, cards: ranks };
+                if (isStraight) return { rank: 4, name: `(${getDisplayRank(RANKS[ranks[0] - 2])} high)`, cards: ranks };
+                if (isWheel) return { rank: 4, name: '(5 high)', cards: [5,4,3,2,1] };
+                if (counts[0] === 3) {
+                    const tripRank = getDisplayRank(RANKS[Object.keys(rankCounts).find(k => rankCounts[k] === 3) - 2]);
+                    return { rank: 3, name: `(de ${tripRank})`, cards: ranks };
+                }
+                if (counts[0] === 2 && counts[1] === 2) {
+                    const pairRanks = Object.keys(rankCounts).filter(k => rankCounts[k] === 2).map(r => parseInt(r)).sort((a,b) => b-a);
+                    return { rank: 2, name: `(${getDisplayRank(RANKS[pairRanks[0]-2])} et ${getDisplayRank(RANKS[pairRanks[1]-2])})`, cards: ranks };
+                }
+                if (counts[0] === 2) {
+                    const pairRank = getDisplayRank(RANKS[Object.keys(rankCounts).find(k => rankCounts[k] === 2) - 2]);
+                    return { rank: 1, name: `(de ${pairRank})`, cards: ranks };
+                }
+                return { rank: 0, name: highCardName, cards: ranks };
+            }
+
+            function breakTie(handA, handB) {
+                for (let i = 0; i < handA.cards.length; i++) {
+                    if (handA.cards[i] > handB.cards[i]) return handA;
+                    if (handA.cards[i] < handB.cards[i]) return handB;
+                }
+                return handA; 
+            }
+
+            
+            function getHandCombinations(array, k) {
+                const result = [];
+                function comb(temp, start) {
+                    if (temp.length === k) {
+                        result.push([...temp]);
+                        return;
+                    }
+                    for (let i = start; i < array.length; i++) {
+                        temp.push(array[i]);
+                        comb(temp, i + 1);
+                        temp.pop();
+                    }
+                }
+                comb([], 0);
+                return result;
+            }
+
+            
+            function getDeckCombinations(array, k) {
+                const result = [];
+                
+                if (k === 1) {
+                    
+                    return array.map(card => [card]);
+                } else if (k === 2) {
+                    
+                    for (let i = 0; i < array.length; i++) {
+                        for (let j = i + 1; j < array.length; j++) {
+                            result.push([array[i], array[j]]);
+                        }
+                    }
+                    return result;
+                }
+                
+                return result; 
+            }
+
+            
+            dealButton.addEventListener('click', handleDealClick);
+            
+            
+            finalMessage.innerText = 'Fin de la main. Votre meilleure combinaison finale est affichée ci-dessus. Cliquez sur \'Nouvelle Main\' pour recommencer.';
+            
+            
+            createFullDeck(); 
+            resetGame();
+            updateUI(); // Appel initial pour afficher le bon état (pré-distribution)
+            
+        });
+    </script>
+</body>
+</html>
